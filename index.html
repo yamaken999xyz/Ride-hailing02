@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配車ツクール</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Sortable.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Noto Sans JP', sans-serif; 
+        }
+        .tab-btn { 
+            transition: all 0.2s; 
+            border-bottom: 3px solid transparent; 
+        }
+        .tab-btn.active { 
+            border-bottom-color: #0d9488; 
+            color: #0d9488; 
+            font-weight: 700; 
+        }
+        .tab-btn:not(.active) { 
+            color: #6b7280; 
+        }
+        .tab-content { 
+            display: none; 
+        }
+        .tab-content.active { 
+            display: block; 
+        }
+        .card { 
+            background: white; 
+            border-radius: 1rem; 
+            box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05), 0 2px 8px -1px rgba(0,0,0,0.03); 
+            border: 1px solid #e5e7eb; 
+            padding: 1.5rem; 
+            margin-bottom: 1.25rem; 
+        }
+        /* ドラッグ可能な人チップのスタイル */
+        .passenger-chip { 
+            cursor: grab; 
+            user-select: none; 
+            transition: box-shadow 0.15s, transform 0.15s; 
+            touch-action: none; /* スマホのスクロールと競合しないように設定 */
+        }
+        .passenger-chip:hover { 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12); 
+            transform: translateY(-1px); 
+        }
+        .passenger-chip:active { 
+            cursor: grabbing; 
+        }
+        .sortable-ghost { 
+            opacity: 0.3; 
+            background: #99f6e4 !important; 
+            border-radius: 0.5rem; 
+        }
+        .sortable-chosen { 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); 
+            transform: rotate(1deg) scale(1.02); 
+        }
+        /* 配車先ボードのコンテナ */
+        .car-board { 
+            min-height: 100px; 
+            transition: background-color 0.2s; 
+            border-radius: 0.75rem; 
+            border: 2px dashed #e5e7eb; 
+        }
+        .car-board.drag-over {
+            background-color: #f0fdfa;
+            border-color: #0d9488;
+        }
+        .capacity-bar { 
+            height: 8px; 
+            border-radius: 9999px; 
+            background: #e5e7eb; 
+            overflow: hidden; 
+        }
+        .capacity-fill { 
+            height: 100%; 
+            border-radius: 9999px; 
+            transition: width 0.3s, background-color 0.3s; 
+        }
+        .car-container.over-capacity { 
+            border-color: #f87171 !important; 
+        }
+        .car-container.over-capacity .car-header { 
+            background: #fee2e2; 
+        }
+        #waiting-area-wrapper.has-passengers { 
+            border-color: #f59e0b !important; 
+            background: #fffbeb; 
+        }
+        #waiting-warning { 
+            display: none; 
+        }
+        #waiting-area-wrapper.has-passengers #waiting-warning { 
+            display: block; 
+        }
+        #modal-overlay { 
+            display: none; 
+            position: fixed; 
+            inset: 0; 
+            background: rgba(0,0,0,0.5); 
+            z-index: 100; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        #modal-overlay.open { 
+            display: flex; 
+        }
+        
+        /* エリアカラーチップ (パステル調かつコントラスト比を高めに調整) */
+        .area-chip-0 { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .area-chip-1 { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+        .area-chip-2 { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+        .area-chip-3 { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+        .area-chip-4 { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+        .area-chip-5 { background: #fce7f3; color: #9d174d; border: 1px solid #fbcfe8; }
+        .area-chip-6 { background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; }
+        .area-chip-7 { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+        .area-chip-8 { background: #fff7ed; color: #9a3412; border: 1px solid #ffedd5; }
+        .area-chip-9 { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-16">
+
+<div class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- ヘッダー -->
+    <header class="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+        <div>
+            <h1 class="text-3xl font-extrabold text-slate-800 flex items-center gap-2">
+                <span class="text-3xl">🏀</span> 配車ツクール
+            </h1>
+            <p class="text-xs text-slate-500 mt-1">バスケや各種スポーツチーム、サークルの乗り合わせ調整をスマートに</p>
+        </div>
+    </header>
+
+    <!-- タブ切り替えバー -->
+    <div class="tab-bar flex border-b border-slate-200 mb-6 bg-white rounded-t-xl px-2">
+        <button class="tab-btn active px-5 py-3 text-sm font-semibold flex items-center gap-2" data-tab="main">
+            <span>🚗</span> 配車する
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-semibold flex items-center gap-2" data-tab="members">
+            <span>👥</span> メンバー・車登録
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-semibold flex items-center gap-2" data-tab="manual">
+            <span>📖</span> 使い方
+        </button>
+    </div>
+
+    <!-- メインタブ：配車する -->
+    <div id="tab-main" class="tab-content active space-y-4">
+        
+        <!-- STEP 1: 出欠確認 -->
+        <div id="step-1" class="card">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-2 border-b border-slate-100">
+                <h2 class="font-bold text-lg flex items-center gap-2 text-slate-800">
+                    <span class="w-7 h-7 rounded-full border-2 border-teal-600 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                    出欠を確認する
+                </h2>
+                <div class="flex items-center justify-between sm:justify-end gap-3">
+                    <div class="text-sm text-slate-500">
+                        参加: <strong id="participant-count" class="text-teal-600 text-2xl font-bold">0</strong> 人
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button id="select-all-btn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 py-1 px-2.5 rounded transition">全員出席</button>
+                        <button id="deselect-all-btn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 py-1 px-2.5 rounded transition">全員欠席</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="attendance-list-empty" class="hidden text-center py-6 text-slate-400 text-sm">
+                メンバーが登録されていません。「メンバー・車登録」タブから登録してください。
+            </div>
+            <div id="attendance-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-56 overflow-y-auto p-1 bg-slate-50/50 rounded-lg border border-slate-100">
+                <!-- JSで展開 -->
+            </div>
+        </div>
+
+        <!-- STEP 2: 使用する車を選択 -->
+        <div id="step-2" class="card">
+            <h2 class="font-bold text-lg mb-4 pb-2 border-b border-slate-100 flex items-center gap-2 text-slate-800">
+                <span class="w-7 h-7 rounded-full border-2 border-teal-600 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                本日の車を選ぶ
+                <span class="ml-auto text-xs font-normal text-slate-500 hidden sm:inline">※出席メンバーの中で、車を出せるドライバーが表示されます</span>
+            </h2>
+            <div id="driver-select-list" class="space-y-2">
+                <!-- JSで展開 -->
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-sm bg-teal-50/50 p-3 rounded-lg border border-teal-100/50">
+                <span class="text-teal-900 font-semibold flex items-center gap-1.5">
+                    <span>🚙</span> 選択した車の合計定員数:
+                </span>
+                <span class="text-teal-800 font-extrabold text-xl"><span id="selected-capacity-total">0</span> 人</span>
+            </div>
+        </div>
+
+        <!-- 操作ボタンエリア -->
+        <div class="text-center py-4">
+            <button id="startBoardBtn" class="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold py-4 px-16 rounded-2xl shadow-md text-lg transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0">
+                配車ボードを開く 🚀
+            </button>
+        </div>
+
+        <!-- アラートメッセージ用ボックス -->
+        <div id="message-box" class="hidden p-4 rounded-xl text-center text-sm font-bold transition-all animate-pulse"></div>
+
+        <!-- 配車調整ボードセクション（最初は非表示） -->
+        <div id="board-section" class="hidden transition-all duration-300">
+            <div class="flex items-center justify-between mb-4 mt-6">
+                <h2 class="font-extrabold text-xl flex items-center gap-2 text-slate-800">
+                    <span class="w-7 h-7 rounded-full border-2 border-teal-600 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                    配車調整ボード
+                    <span id="board-summary" class="text-sm font-normal text-slate-500 ml-2"></span>
+                </h2>
+                <div class="flex gap-2">
+                    <button id="autoAssignBtn" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-2 px-3 rounded-lg text-xs border border-indigo-200 flex items-center gap-1 transition">
+                        <span>⚡</span> 同エリア自動配置
+                    </button>
+                    <button id="resetBoardBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 px-3 rounded-lg text-xs flex items-center gap-1 transition">
+                        <span>🔄</span> リセット
+                    </button>
+                </div>
+            </div>
+            
+            <!-- ドラッグ＆ドロップ対象：車ごとのブロックエリア -->
+            <div id="cars-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                <!-- JSで車が展開される -->
+            </div>
+            
+            <!-- 待機（未割当て）エリア -->
+            <div id="waiting-area-wrapper" class="border-2 border-dashed border-slate-300 rounded-2xl p-4 transition-all bg-white shadow-sm">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-slate-700 flex items-center gap-1">
+                            <span>🅿️</span> 未配車のメンバー（待機エリア）
+                        </span>
+                        <span id="waiting-count" class="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full text-xs">0</span>
+                    </div>
+                    <span id="waiting-warning" class="text-amber-600 text-sm font-semibold animate-pulse">
+                        ⚠️ まだ車に乗っていない人がいます
+                    </span>
+                </div>
+                <div id="waiting-area" class="flex flex-wrap gap-2 min-h-[60px] p-2 rounded-lg bg-slate-50">
+                    <!-- JSで待機メンバーが展開される -->
+                </div>
+            </div>
+
+            <!-- コピーと書き出しアクション -->
+            <div class="text-center my-8 flex flex-col sm:flex-row justify-center items-center gap-3">
+                <button id="copyBtn" class="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold py-4 px-16 rounded-xl shadow-md transition-all text-lg border border-teal-500 flex items-center justify-center gap-2">
+                    <span>📋</span> 配車結果をコピーする
+                </button>
+            </div>
+
+            <div id="absent-section" class="hidden mt-4 p-3 bg-slate-100 rounded-xl">
+                <p class="text-xs text-slate-500">欠席メンバー: <span id="absent-names" class="text-slate-600 font-medium"></span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- タブ：メンバー・車登録 -->
+    <div id="tab-members" class="tab-content">
+        <div class="card">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h2 class="font-bold text-lg text-slate-800">👥 登録メンバー一覧</h2>
+                    <p class="text-xs text-slate-500 mt-1">各個人の名前、お住まい等の活動エリア、車を出せる場合の乗車定員を管理します。</p>
+                </div>
+                
+                <!-- インポート/エクスポートアクション -->
+                <div class="flex flex-wrap gap-2">
+                    <button id="csv-export-btn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg text-xs transition flex items-center gap-1 border border-slate-200">
+                        <span>📥</span> CSVエクスポート
+                    </button>
+                    <label class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg text-xs cursor-pointer transition flex items-center gap-1 border border-slate-200">
+                        <span>📤</span> CSVインポート
+                        <input type="file" id="csv-import-input" accept=".csv" class="hidden">
+                    </label>
+                    <button id="clear-all-members-btn" class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold py-2 px-3 rounded-lg text-xs transition flex items-center gap-1 border border-rose-200">
+                        <span>⚠️</span> 全削除
+                    </button>
+                </div>
+            </div>
+
+            <!-- エリアマーカーの説明 -->
+            <div class="mb-4">
+                <span class="text-xs font-semibold text-slate-500 block mb-1.5">登録されているエリア一覧:</span>
+                <div id="area-legend" class="flex flex-wrap gap-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <!-- JSでエリア一覧バッジを展開 -->
+                </div>
+            </div>
+
+            <!-- テーブル（SP用にコンテナスクロール） -->
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+                <table class="w-full text-sm text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold">
+                            <th class="py-3 px-4">名前</th>
+                            <th class="py-3 px-4">エリア (任意)</th>
+                            <th class="py-3 px-4 text-center">車の定員 (任意)</th>
+                            <th class="py-3 px-4 text-center w-32">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="members-tbody" class="divide-y divide-slate-100">
+                        <!-- JSで展開されるメンバーリスト -->
+                    </tbody>
+                    <tfoot id="members-tfoot" class="bg-slate-50/50">
+                        <!-- JSでインライン登録フォームを展開 -->
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- タブ：使い方 -->
+    <div id="tab-manual" class="tab-content">
+        <div class="card prose prose-slate max-w-none">
+            <h2 class="font-extrabold text-2xl mb-6 text-slate-800 flex items-center gap-2">
+                <span>📖</span> 配車ツクール ご利用マニュアル
+            </h2>
+            
+            <div class="space-y-6">
+                <div class="p-4 bg-teal-50 rounded-xl border border-teal-100">
+                    <h3 class="font-bold text-teal-900 text-base flex items-center gap-1.5 mb-1">
+                        <span>💡</span> このアプリの特徴
+                    </h3>
+                    <p class="text-teal-800 text-xs leading-relaxed">
+                        バスケやフットサル、野球などのチーム活動における移動車の割り振りを、直感的なドラッグ＆ドロップで行うことができます。
+                        「近所に住んでいる人同士」や「同じエリアの人」が同じ車に乗りやすくなるよう視覚的に色分けされます。
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <section>
+                        <h4 class="font-bold text-slate-800 mb-1 flex items-center gap-1 text-sm sm:text-base">
+                            <span class="bg-teal-600 text-white text-xs w-5 h-5 rounded-full inline-flex items-center justify-center">1</span>
+                            メンバーと車（定員）の登録
+                        </h4>
+                        <ul class="list-disc list-inside text-slate-600 text-sm space-y-1 ml-2">
+                            <li>まずは「👥 メンバー・車登録」タブに移動します。</li>
+                            <li><strong>名前</strong>：個人の識別名を入力します（必須）。</li>
+                            <li><strong>エリア</strong>：任意で「東区」「門司」「小倉」など、乗り合いしやすい地域・拠点を入力します（エリアごとに自動で同じ色に色分けされます）。</li>
+                            <li><strong>車の定員</strong>：車を出せる人の場合は、「運転手本人も含めた定員」を入力します。車を出さない（乗る専門の）メンバーは「0（または空欄）」のままで登録してください。</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h4 class="font-bold text-slate-800 mb-1 flex items-center gap-1 text-sm sm:text-base">
+                            <span class="bg-teal-600 text-white text-xs w-5 h-5 rounded-full inline-flex items-center justify-center">2</span>
+                            出欠・稼働車両の確定
+                        </h4>
+                        <ul class="list-disc list-inside text-slate-600 text-sm space-y-1 ml-2">
+                            <li>「🚗 配車する」タブに戻ります。</li>
+                            <li><strong>ステップ1</strong>：本日の練習や試合に「参加するメンバー」にチェックを入れます（初期は全員チェック状態）。</li>
+                            <li><strong>ステップ2</strong>：出席者の中から「車を出せる人（登録時に定員を1以上に設定した人）」だけがドライバー候補として抽出されます。本日実際に稼働する車にチェックを入れます。</li>
+                            <li>※その場でその日限りの臨時の乗車定員変更も可能です。</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h4 class="font-bold text-slate-800 mb-1 flex items-center gap-1 text-sm sm:text-base">
+                            <span class="bg-teal-600 text-white text-xs w-5 h-5 rounded-full inline-flex items-center justify-center">3</span>
+                            ドラッグ＆ドロップでらくらく調整
+                        </h4>
+                        <ul class="list-disc list-inside text-slate-600 text-sm space-y-1 ml-2">
+                            <li>「<strong>配車ボードを開く</strong>」を押すと画面下部に車と待機エリアが出現します。</li>
+                            <li>車の所有者（運転手）は最初から自動でその車の中に配置されます。</li>
+                            <li>待機メンバーのチップをドラッグして、各車両へ運んでいきます。</li>
+                            <li>定員数オーバーや、定員ぴったり状態がインジケーターバーの色変化で視覚的にわかります。</li>
+                            <li>便利な「<strong>⚡ 同エリア自動配置</strong>」機能を使うと、同じ地域エリアの乗車希望者をワンクリックで自動的に優先割り当てします。</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h4 class="font-bold text-slate-800 mb-1 flex items-center gap-1 text-sm sm:text-base">
+                            <span class="bg-teal-600 text-white text-xs w-5 h-5 rounded-full inline-flex items-center justify-center">4</span>
+                            結果をLINEや連絡ツールにコピー
+                        </h4>
+                        <ul class="list-disc list-inside text-slate-600 text-sm space-y-1 ml-2">
+                            <li>調整が終わったら「📋 結果をコピー」ボタンを押します。</li>
+                            <li>クリップボードに読みやすく整形されたテキスト結果が保存されますので、そのままLINEグループ等へペーストして案内してください。</li>
+                        </ul>
+                    </section>
+
+                    <section class="border-t pt-4">
+                        <h4 class="font-bold text-slate-800 mb-1 text-sm sm:text-base flex items-center gap-1">
+                            <span>📦</span> CSVによるデータバックアップ
+                        </h4>
+                        <p class="text-slate-600 text-xs ml-2 leading-relaxed">
+                            登録データはブラウザの保存領域（LocalStorage）に記録されるため、毎回入力する必要はありません。
+                            万が一ブラウザキャッシュをクリアしたときのために、「CSVエクスポート（書き出し）」を使ってお手元のパソコンやスマホにバックアップファイルとして保存しておくことを推奨します。
+                        </p>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- モーダル（共通ダイアログ） -->
+<div id="modal-overlay">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 transform transition-all duration-200 border border-slate-100">
+        <h3 id="modal-title" class="font-bold text-lg text-slate-800 mb-4"></h3>
+        <div id="modal-body" class="space-y-3 text-sm text-slate-600"></div>
+        <div class="flex gap-3 mt-6">
+            <button id="modal-cancel" class="flex-1 py-2.5 rounded-xl border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50 transition">キャンセル</button>
+            <button id="modal-ok" class="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-700 transition">決定</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== データ定義（サンプル入り） =====
+const DATA_VERSION = 'v10';
+const DEFAULT_MEMBERS = [
+    { name: '山田 太郎', area: '小倉', carCapacity: 5 },
+    { name: '佐藤 花子', area: '八幡', carCapacity: 4 },
+    { name: '鈴木 一郎', area: '門司', carCapacity: 0 },
+    { name: '田中 亮太', area: '小倉', carCapacity: 0 },
+    { name: '高橋 健二', area: '戸畑', carCapacity: 7 },
+    { name: '渡辺 恵美', area: '門司', carCapacity: 0 },
+    { name: '伊藤 翼', area: '小倉', carCapacity: 0 },
+    { name: '小林 咲', area: '戸畑', carCapacity: 0 },
+    { name: '加藤 大介', area: '八幡', carCapacity: 4 },
+    { name: '松本 楓', area: '若松', carCapacity: 0 }
+];
+
+function loadData() {
+    try {
+        const storedVersion = localStorage.getItem('haicha_version');
+        if (storedVersion !== DATA_VERSION) {
+            // 旧バージョンからの移行、または新規の初期サンプル投入
+            let migratedMembers = [];
+            
+            const oldDataV9 = localStorage.getItem('haicha_data_v9');
+            if (oldDataV9) {
+                const parsed = JSON.parse(oldDataV9);
+                if (parsed && Array.isArray(parsed.members)) {
+                    migratedMembers = parsed.members;
+                }
+            } else {
+                // v8以前
+                const oldMembers = JSON.parse(localStorage.getItem('haicha_members')) || [];
+                const oldDrivers = JSON.parse(localStorage.getItem('haicha_drivers')) || [];
+                
+                migratedMembers = oldMembers.map(m => {
+                    const driver = oldDrivers.find(d => d.name === m.name + "の車" || d.name === m.name);
+                    return {
+                        name: m.name,
+                        area: m.area || '',
+                        carCapacity: driver ? driver.defaultCapacity : 0
+                    };
+                });
+                
+                oldDrivers.forEach(d => {
+                    const isLinked = oldMembers.some(m => d.name === m.name + "の車" || d.name === m.name);
+                    if (!isLinked) {
+                        migratedMembers.push({ name: d.name, area: '', carCapacity: d.defaultCapacity });
+                    }
+                });
+            }
+
+            // 何もデータがない場合は初期サンプルをセット
+            if (migratedMembers.length === 0) {
+                migratedMembers = DEFAULT_MEMBERS;
+            }
+
+            const data = { members: migratedMembers };
+            localStorage.setItem('haicha_version', DATA_VERSION);
+            localStorage.setItem('haicha_data_v10', JSON.stringify(data));
+            return data;
+        }
+        
+        const dataV10 = localStorage.getItem('haicha_data_v10');
+        if (dataV10) {
+            return JSON.parse(dataV10);
+        }
+        return { members: DEFAULT_MEMBERS };
+    } catch(e) {
+        console.error('Data load error:', e);
+        return { members: DEFAULT_MEMBERS };
+    }
+}
+
+function saveData() {
+    try {
+        localStorage.setItem('haicha_version', DATA_VERSION);
+        localStorage.setItem('haicha_data_v10', JSON.stringify(appData));
+    } catch(e) {
+        console.error('Data save error:', e);
+    }
+}
+
+let appData = loadData();
+let areaColorMap = {};
+let colorIndex = 0;
+
+function getAreaColor(area) {
+    if (!area) return 'area-chip-9';
+    const trimmed = area.trim();
+    if (!trimmed) return 'area-chip-9';
+    
+    if (!areaColorMap[trimmed]) {
+        areaColorMap[trimmed] = 'area-chip-' + (colorIndex % 10);
+        colorIndex++;
+    }
+    return areaColorMap[trimmed];
+}
+
+function rebuildAreaColors() {
+    areaColorMap = {};
+    colorIndex = 0;
+    const areas = [...new Set(appData.members.map(m => m.area ? m.area.trim() : '').filter(Boolean))].sort();
+    areas.forEach(a => getAreaColor(a));
+}
+
+// ===== タブの切替処理 =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        
+        if (btn.dataset.tab === 'main') {
+            renderMainTab();
+        } else if (btn.dataset.tab === 'members') {
+            renderMembersTab();
+        }
+    });
+});
+
+// ===== 汎用カスタムモーダル =====
+let modalOkCallback = null;
+function openModal(title, bodyHtml, onOk) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = bodyHtml;
+    modalOkCallback = onOk;
+    document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    modalOkCallback = null;
+}
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+document.getElementById('modal-ok').addEventListener('click', () => {
+    if (modalOkCallback) modalOkCallback();
+});
+
+// ===== メッセージトースト表示 =====
+function showMessage(msg, type) {
+    const box = document.getElementById('message-box');
+    if (!box) return;
+    box.textContent = msg;
+    box.className = 'p-4 rounded-xl text-center text-sm font-bold my-3 transition-all ' +
+        (type === 'success' ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-rose-50 text-rose-800 border border-rose-200');
+    box.classList.remove('hidden');
+    
+    clearTimeout(box._timer);
+    box._timer = setTimeout(() => {
+        box.classList.add('hidden');
+    }, 4000);
+}
+
+// ===== 🚗 メインタブ制御 =====
+function renderMainTab() {
+    rebuildAreaColors();
+    renderAttendance();
+    // ボードは「配車ボードを開く」が押されるまで隠しておく
+}
+
+function renderAttendance() {
+    const el = document.getElementById('attendance-list');
+    const emptyEl = document.getElementById('attendance-list-empty');
+    
+    if (appData.members.length === 0) {
+        el.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        document.getElementById('participant-count').textContent = '0';
+        renderDriverSelect();
+        return;
+    }
+    
+    emptyEl.classList.add('hidden');
+    el.innerHTML = appData.members.map((m, idx) => {
+        const areaBadge = m.area ? `<span class="${getAreaColor(m.area)} px-1.5 py-0.2 text-[10px] rounded font-bold ml-1">${m.area}</span>` : '';
+        return `
+            <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer select-none transition">
+                <input type="checkbox" name="attendance" value="${m.name}" class="h-4 w-4 rounded text-teal-600 focus:ring-teal-500" checked>
+                <span class="text-sm font-medium text-slate-700 flex items-center justify-between w-full">
+                    <span>${m.name}</span>
+                    ${areaBadge}
+                </span>
+            </label>
+        `;
+    }).join('');
+    
+    el.querySelectorAll('input').forEach(cb => {
+        cb.addEventListener('change', updateParticipantCount);
+    });
+    updateParticipantCount();
+}
+
+function updateParticipantCount() {
+    const checkedLength = document.querySelectorAll('input[name="attendance"]:checked').length;
+    document.getElementById('participant-count').textContent = checkedLength;
+    renderDriverSelect();
+}
+
+// 出欠全員一括変更
+document.getElementById('select-all-btn').addEventListener('click', () => {
+    document.querySelectorAll('input[name="attendance"]').forEach(cb => cb.checked = true);
+    updateParticipantCount();
+});
+document.getElementById('deselect-all-btn').addEventListener('click', () => {
+    document.querySelectorAll('input[name="attendance"]').forEach(cb => cb.checked = false);
+    updateParticipantCount();
+});
+
+function renderDriverSelect() {
+    const participants = Array.from(document.querySelectorAll('input[name="attendance"]:checked')).map(cb => cb.value);
+    
+    // 出席メンバーの中に車所有ドライバーがいるかフィルタ
+    const availableDrivers = appData.members.filter(m => participants.includes(m.name) && m.carCapacity > 0);
+    const el = document.getElementById('driver-select-list');
+    
+    if (availableDrivers.length === 0) {
+        el.innerHTML = `
+            <div class="p-4 bg-amber-50 rounded-xl border border-amber-100 text-amber-800 text-sm flex items-start gap-2">
+                <span>⚠️</span>
+                <div>
+                    <strong>本日参加可能な車（ドライバー）が見つかりません。</strong><br>
+                    <span class="text-xs text-amber-700">「メンバー・車登録」タブで車の定員を1以上に設定しているメンバーが出席している必要があります。</span>
+                </div>
+            </div>
+        `;
+        document.getElementById('selected-capacity-total').textContent = '0';
+        return;
+    }
+
+    el.innerHTML = availableDrivers.map(m => {
+        const carName = m.name.endsWith('車') || m.name.endsWith('バス') || m.name.endsWith('ワゴン') || m.name.endsWith('カー') ? m.name : m.name + "の車";
+        const areaBadge = m.area ? `<span class="${getAreaColor(m.area)} px-2 py-0.5 text-xs rounded-full font-bold">${m.area}</span>` : '';
+        
+        return `
+            <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition gap-2">
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="drv-sel-${m.name}" name="driver" value="${m.name}" class="h-5 w-5 rounded text-teal-600 focus:ring-teal-500 cursor-pointer">
+                    <label for="drv-sel-${m.name}" class="font-bold text-slate-800 cursor-pointer flex items-center gap-1.5 text-sm sm:text-base">
+                        🚙 ${carName}
+                        ${areaBadge}
+                    </label>
+                </div>
+                <div class="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                    <span class="font-medium">定員:</span>
+                    <input type="number" name="cap" data-driver="${m.name}" value="${m.carCapacity}" min="1" max="20" disabled
+                           class="w-12 p-1 border rounded text-center font-bold text-slate-800 bg-slate-200 focus:ring-1 focus:ring-teal-500">
+                    <span>名</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // チェック連動：車を稼働チェックしたら定員変更できるようになる
+    el.querySelectorAll('input[name="driver"]').forEach(cb => {
+        cb.addEventListener('change', e => {
+            const capInput = el.querySelector(`input[name="cap"][data-driver="${e.target.value}"]`);
+            if (capInput) {
+                capInput.disabled = !e.target.checked;
+                if (e.target.checked) {
+                    capInput.classList.remove('bg-slate-200');
+                    capInput.classList.add('bg-white');
+                } else {
+                    capInput.classList.remove('bg-white');
+                    capInput.classList.add('bg-slate-200');
+                }
+            }
+            updateSelectedCapacityTotal();
+        });
+    });
+
+    el.querySelectorAll('input[name="cap"]').forEach(input => {
+        input.addEventListener('input', updateSelectedCapacityTotal);
+    });
+
+    // 初期起動時におおよそ1台目はチェック入れておくなどの便宜は図らず、手動を重視
+    updateSelectedCapacityTotal();
+}
+
+function updateSelectedCapacityTotal() {
+    let total = 0;
+    const checkedDrivers = document.querySelectorAll('input[name="driver"]:checked');
+    checkedDrivers.forEach(cb => {
+        const memberName = cb.value;
+        const capInput = document.querySelector(`input[name="cap"][data-driver="${memberName}"]`);
+        if (capInput) {
+            total += parseInt(capInput.value, 10) || 0;
+        }
+    });
+    document.getElementById('selected-capacity-total').textContent = total;
+}
+
+// ===== 配車ボードの構築 =====
+let currentHaichas = []; // 現在選んだ車両リスト保持
+let currentParticipants = []; // 本日の出席者リスト
+
+document.getElementById('startBoardBtn').addEventListener('click', () => {
+    const participants = Array.from(document.querySelectorAll('input[name="attendance"]:checked')).map(cb => cb.value);
+    if (participants.length === 0) { 
+        showMessage('ステップ1で参加メンバーを選んでください。', 'error'); 
+        return; 
+    }
+    
+    const selectedHaichas = [];
+    document.querySelectorAll('input[name="driver"]:checked').forEach(cb => {
+        const memberName = cb.value;
+        const carName = memberName.endsWith('車') || memberName.endsWith('バス') || memberName.endsWith('ワゴン') || memberName.endsWith('カー') ? memberName : memberName + "の車";
+        const capInput = document.querySelector(`input[name="cap"][data-driver="${memberName}"]`);
+        const cap = parseInt(capInput.value, 10) || 1;
+        
+        selectedHaichas.push({ 
+            driverName: memberName,
+            carName: carName, 
+            capacity: cap 
+        });
+    });
+    
+    if (selectedHaichas.length === 0) { 
+        showMessage('ステップ2で、本日本当に出す車を1台以上チェックして選んでください。', 'error'); 
+        return; 
+    }
+    
+    // 合計定員数チェック
+    const totalCap = selectedHaichas.reduce((acc, c) => acc + c.capacity, 0);
+    if (totalCap < participants.length) {
+        showMessage(`⚠️ 合計定員(${totalCap}人)が参加人数(${participants.length}人)を下回っています。不足分は乗車できません。`, 'error');
+    }
+
+    currentHaichas = selectedHaichas;
+    currentParticipants = participants;
+
+    buildBoard(participants, selectedHaichas);
+});
+
+// ボード再構成
+function buildBoard(participants, haichas) {
+    rebuildAreaColors();
+    const memberMap = {};
+    appData.members.forEach(m => { memberMap[m.name] = m; });
+
+    const assignedNames = new Set();
+    const haichaAssignments = {};
+    
+    haichas.forEach(car => {
+        haichaAssignments[car.carName] = [];
+        // 運転手は自動で自分の車に乗せる
+        if (participants.includes(car.driverName)) {
+            haichaAssignments[car.carName].push(car.driverName);
+            assignedNames.add(car.driverName);
+        }
+    });
+    
+    // まだ車に乗っていない人を待機リストへ
+    const waiting = participants.filter(name => !assignedNames.has(name));
+
+    // 車両のカードグリッドを展開
+    const carsGrid = document.getElementById('cars-grid');
+    carsGrid.innerHTML = haichas.map(car => {
+        const initialChips = haichaAssignments[car.carName].map(name => {
+            return makeChipHtml(memberMap[name] || { name: name, area: '' });
+        }).join('');
+        
+        return `
+            <div class="car-container card !p-0 overflow-hidden border-2 border-slate-200 transition-all bg-white" data-carname="${car.carName}">
+                <div class="car-header bg-slate-50 px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                        <span class="font-extrabold text-slate-800 text-sm">🚙 ${car.carName}</span>
+                    </div>
+                    <div class="text-xs text-slate-500 font-semibold bg-white border border-slate-100 px-2 py-0.5 rounded-md shadow-sm">
+                        <span class="passenger-count font-extrabold text-teal-600 text-sm">0</span>
+                        <span> / ${car.capacity} 名</span>
+                    </div>
+                </div>
+                <!-- 定員インジケータ -->
+                <div class="px-4 pt-3 pb-1">
+                    <div class="capacity-bar"><div class="capacity-fill" style="width:0%"></div></div>
+                </div>
+                <!-- ドラッグ受け入れ先ボード -->
+                <div class="car-board p-3 flex flex-wrap gap-2 bg-slate-50/50 m-4 mt-2" data-carname="${car.carName}" data-capacity="${car.capacity}">
+                    ${initialChips}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // 待機エリア展開
+    const waitingArea = document.getElementById('waiting-area');
+    waitingArea.innerHTML = waiting.map(name => {
+        return makeChipHtml(memberMap[name] || { name: name, area: '' });
+    }).join('');
+    
+    document.getElementById('board-summary').textContent = `（車 ${haichas.length}台 / 定員 ${haichas.reduce((acc, c) => acc + c.capacity, 0)}名 / 参加者 ${participants.length}名）`;
+
+    // 欠席者エリア
+    const absentees = appData.members.filter(m => !participants.includes(m.name));
+    const absentSection = document.getElementById('absent-section');
+    if (absentees.length > 0) {
+        document.getElementById('absent-names').textContent = absentees.map(a => a.name).join('、');
+        absentSection.classList.remove('hidden');
+    } else {
+        absentSection.classList.add('hidden');
+    }
+
+    // Sortableドラッグ＆ドロップ設定
+    document.querySelectorAll('.car-board, #waiting-area').forEach(board => {
+        new Sortable(board, {
+            group: 'passengers',
+            animation: 180,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            // ドラッグ開始時に他を受け入れ可能に見せるビジュアルエフェクト用
+            onStart: function() {
+                document.querySelectorAll('.car-board').forEach(b => {
+                    b.classList.add('drag-over');
+                });
+            },
+            onEnd: function() {
+                document.querySelectorAll('.car-board').forEach(b => {
+                    b.classList.remove('drag-over');
+                });
+                updateBoard();
+            },
+            onAdd: function() {
+                updateBoard();
+            }
+        });
+    });
+    
+    document.getElementById('board-section').classList.remove('hidden');
+    // ドラッグ＆ドロップしやすい位置へスクロール
+    document.getElementById('board-section').scrollIntoView({ behavior: 'smooth' });
+    updateBoard();
+}
+
+function makeChipHtml(member) {
+    const colorClass = getAreaColor(member.area);
+    const areaLabel = member.area ? `<span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-white/70 shadow-sm text-slate-700 ml-1 uppercase border border-slate-200/50">${member.area}</span>` : '';
+    const hasCarMark = member.carCapacity > 0 ? '🔑' : '';
+    
+    return `
+        <div class="passenger-chip ${colorClass} px-3 py-2 rounded-xl text-sm font-bold shadow-sm flex items-center gap-1" data-name="${member.name}">
+            <span>${member.name}</span>
+            ${areaLabel}
+            <span class="text-xs" title="車所有ドライバー">${hasCarMark}</span>
+        </div>
+    `;
+}
+
+// ドラッグ移動した後のボードの状態（バーの色や人数カウンタ、未割り当て警告など）をリフレッシュ
+function updateBoard() {
+    let waitingCount = 0;
+    const waitingArea = document.getElementById('waiting-area');
+    if (waitingArea) {
+        waitingCount = waitingArea.children.length;
+        document.getElementById('waiting-count').textContent = waitingCount;
+    }
+
+    document.querySelectorAll('.car-board').forEach(board => {
+        const container = board.closest('.car-container');
+        const cap = parseInt(board.dataset.capacity, 10);
+        const count = board.children.length;
+        const pct = Math.min(100, (count / cap) * 100);
+        
+        container.querySelector('.passenger-count').textContent = count;
+        const fill = container.querySelector('.capacity-fill');
+        
+        fill.style.width = pct + '%';
+        
+        if (count > cap) {
+            // 定員オーバー
+            fill.style.backgroundColor = '#ef4444'; // Red
+            container.classList.add('over-capacity');
+        } else if (count === cap) {
+            // ピッタリ満車
+            fill.style.backgroundColor = '#f59e0b'; // Orange
+            container.classList.remove('over-capacity');
+        } else {
+            // 余裕あり
+            fill.style.backgroundColor = '#10b981'; // Green
+            container.classList.remove('over-capacity');
+        }
+    });
+    
+    // 待機中エリアの警告表示
+    document.getElementById('waiting-area-wrapper').classList.toggle('has-passengers', waitingCount > 0);
+}
+
+// ===== 自動割当ロジック (エリアを優先してマッチングするスマート機能) =====
+document.getElementById('autoAssignBtn').addEventListener('click', () => {
+    const waitingArea = document.getElementById('waiting-area');
+    if (!waitingArea || waitingArea.children.length === 0) {
+        showMessage('すべてのメンバーが既に車に配置されています。', 'success');
+        return;
+    }
+
+    openModal('自動配車を実行しますか？', '出席中の未配車メンバーを、同じ登録エリアのドライバーの車へ優先して自動で割り当てます。', () => {
+        closeModal();
+        executeAutoAssignment();
+    });
+});
+
+function executeAutoAssignment() {
+    const memberMap = {};
+    appData.members.forEach(m => { memberMap[m.name] = m; });
+
+    // 1. 各稼働車両ボードの取得
+    const carBoards = Array.from(document.querySelectorAll('.car-board'));
+    
+    // 2. 待機中チップの取得
+    const waitingArea = document.getElementById('waiting-area');
+    const waitingChips = Array.from(waitingArea.querySelectorAll('.passenger-chip'));
+    
+    if (waitingChips.length === 0) return;
+
+    // 現在の各車の状態（空き容量、所属エリア）を割り出し
+    const carStates = carBoards.map(board => {
+        const capacity = parseInt(board.dataset.capacity, 10);
+        const currentCount = board.children.length;
+        const carName = board.dataset.carname;
+        
+        // ドライバーの情報を元に車の基準エリアを取得
+        const driverName = currentHaichas.find(h => h.carName === carName)?.driverName;
+        const driverArea = driverName ? memberMap[driverName]?.area : '';
+
+        return {
+            el: board,
+            carName: carName,
+            capacity: capacity,
+            freeSpace: capacity - currentCount,
+            area: driverArea ? driverArea.trim() : ''
+        };
+    });
+
+    // 3. 待機者を順次自動配置していく
+    // (A) まずは同エリア（エリア完全一致）かつ車に空きがあるものを優先して流し込む
+    let remainingChips = [];
+    
+    waitingChips.forEach(chip => {
+        const pName = chip.dataset.name;
+        const pMember = memberMap[pName];
+        const pArea = pMember && pMember.area ? pMember.area.trim() : '';
+
+        let assigned = false;
+        
+        if (pArea) {
+            // 同じエリアで空きがある車を探す
+            const matchingCar = carStates.find(c => c.area === pArea && c.freeSpace > 0);
+            if (matchingCar) {
+                matchingCar.el.appendChild(chip);
+                matchingCar.freeSpace--;
+                assigned = true;
+            }
+        }
+        
+        if (!assigned) {
+            remainingChips.push(chip);
+        }
+    });
+
+    // (B) 次に、余った人をエリア問わず、単に空きがある車へ流し込む
+    remainingChips.forEach(chip => {
+        const matchingCar = carStates.find(c => c.freeSpace > 0);
+        if (matchingCar) {
+            matchingCar.el.appendChild(chip);
+            matchingCar.freeSpace--;
+        }
+    });
+
+    updateBoard();
+    showMessage('自動配置を完了しました。手動で最終調整を行ってください。', 'success');
+}
+
+// 完全に初期（ドライバーのみが各自の車に乗った状態）に戻す
+document.getElementById('resetBoardBtn').addEventListener('click', () => {
+    if (!currentParticipants.length) return;
+    openModal('配置を初期化しますか？', '現在の配車調整をリセットし、全員を待機エリアに戻します。（ドライバーは各自の車に初期配置されます）', () => {
+        closeModal();
+        buildBoard(currentParticipants, currentHaichas);
+    });
+});
+
+// ===== 結果をテキストコピー =====
+function copyResults() {
+    const waitingArea = document.getElementById('waiting-area');
+    if (waitingArea && waitingArea.children.length > 0) {
+        // 全員配車が済んでいなくても、未割当があることを明示してコピーは可能にする（強制ブロックではなく警告モーダルのみ）
+        openModal(
+            '注意：未配車のメンバーが残っています', 
+            `まだ待機エリアに ${waitingArea.children.length} 名のメンバーが残っています。このまま配車結果テキストをコピーしますか？`, 
+            () => {
+                closeModal();
+                executeCopyProcess();
+            }
+        );
+        return;
+    }
+    executeCopyProcess();
+}
+
+function executeCopyProcess() {
+    const carBoards = document.querySelectorAll('.car-board');
+    const participantCount = document.querySelectorAll('input[name="attendance"]:checked').length;
+    
+    let text = '【配車結果のご案内】\n';
+    text += `調整日: ${new Date().toLocaleDateString('ja-JP')}\n`;
+    text += `稼働台数: ${carBoards.length}台 / 参加者数: ${participantCount}名\n`;
+    text += '---------------------------------\n\n';
+
+    carBoards.forEach(board => {
+        const capacity = board.dataset.capacity;
+        const currentCount = board.children.length;
+        text += `🚙 ${board.dataset.carname} (${currentCount}/${capacity}名)\n`;
+        
+        const chips = board.querySelectorAll('.passenger-chip');
+        if (chips.length === 0) {
+            text += '  (乗車メンバーなし)\n';
+        } else {
+            chips.forEach((chip, i) => {
+                const pName = chip.dataset.name;
+                // 1人目のメンバーを通常ドライバーとする
+                const driverSuffix = i === 0 ? ' [運転手]' : '';
+                text += `  • ${pName}${driverSuffix}\n`;
+            });
+        }
+        text += '\n';
+    });
+    
+    const waitingArea = document.getElementById('waiting-area');
+    if (waitingArea && waitingArea.children.length > 0) {
+        text += '🅿️ 乗車調整中（未配置）:\n';
+        waitingArea.querySelectorAll('.passenger-chip').forEach(chip => {
+            text += `  • ${chip.dataset.name}\n`;
+        });
+        text += '\n';
+    }
+
+    const absent = document.getElementById('absent-names').textContent;
+    if (absent) {
+        text += `欠席連絡: ${absent}\n`;
+    }
+    
+    text += '---------------------------------\n';
+    text += '※忘れ物のないように気をつけてお越しください！';
+
+    // クリップボードコピー処理の互換性対策
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    
+    try {
+        const success = document.execCommand('copy');
+        if (success) {
+            showMessage('配車結果をコピーしました！LINEや連絡グループへ貼り付けて共有してください。', 'success');
+        } else {
+            showMessage('コピーに失敗しました。お手数ですが手動でコピーしてください。', 'error');
+        }
+    } catch (err) {
+        console.error('Copy Error:', err);
+        showMessage('コピー中に不具合が発生しました。', 'error');
+    }
+    
+    document.body.removeChild(ta);
+}
+
+document.getElementById('copyBtn').onclick = copyResults;
+
+
+// ===== 👥 メンバー・車 管理タブのロジック =====
+function renderMembersTab() {
+    rebuildAreaColors();
+    renderAreaLegend();
+    
+    const tbody = document.getElementById('members-tbody');
+    if (appData.members.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="py-8 text-center text-slate-400 text-sm">
+                    登録メンバーはいません。<br>下の「＋ 追加」欄からメンバーを新規作成してください。
+                </td>
+            </tr>
+        `;
+    } else {
+        tbody.innerHTML = appData.members.map((m, i) => {
+            const areaMarkup = m.area 
+                ? `<span class="${getAreaColor(m.area)} px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm">${m.area}</span>` 
+                : `<span class="text-slate-400 text-xs italic">未設定</span>`;
+            
+            const capMarkup = m.carCapacity > 0 
+                ? `<span class="font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-100">${m.carCapacity} 人</span>` 
+                : `<span class="text-slate-400 text-xs">乗車専門 (0)</span>`;
+
+            return `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="py-3 px-4 font-bold text-slate-700">${m.name}</td>
+                    <td class="py-3 px-4">${areaMarkup}</td>
+                    <td class="py-3 px-4 text-center">${capMarkup}</td>
+                    <td class="py-3 px-4 text-center">
+                        <div class="inline-flex gap-1">
+                            <button class="bg-teal-50 hover:bg-teal-100 text-teal-700 font-semibold px-2.5 py-1 rounded text-xs transition border border-teal-100" onclick="editMember(${i})">編集</button>
+                            <button class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold px-2.5 py-1 rounded text-xs transition border border-rose-100" onclick="deleteMember(${i})">削除</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+    
+    // インラインフッター入力フォーム
+    const tfoot = document.getElementById('members-tfoot');
+    tfoot.innerHTML = `
+        <tr class="bg-slate-100/70 border-t-2 border-slate-200">
+            <td class="p-2.5">
+                <input id="mem-inline-name" type="text" placeholder="＋ 氏名・ニックネーム" 
+                       class="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-bold">
+            </td>
+            <td class="p-2.5">
+                <input id="mem-inline-area" type="text" placeholder="地域名 (例: 東区)" 
+                       class="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </td>
+            <td class="p-2.5 text-center">
+                <div class="flex items-center justify-center gap-1">
+                    <input id="mem-inline-cap" type="number" placeholder="0" min="0" max="20"
+                           class="w-16 p-2 border border-slate-300 rounded-lg text-sm bg-white text-center font-bold focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    <span class="text-xs text-slate-600 font-bold">人</span>
+                </div>
+            </td>
+            <td class="p-2.5 text-center">
+                <button id="mem-inline-add-btn" class="w-full bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-3 rounded-lg shadow-sm transition">
+                    追加
+                </button>
+            </td>
+        </tr>
+    `;
+    document.getElementById('mem-inline-add-btn').onclick = inlineAddMember;
+}
+
+// 登録されている全エリアバッジ
+function renderAreaLegend() {
+    const el = document.getElementById('area-legend');
+    const uniqueAreas = [...new Set(appData.members.map(m => m.area ? m.area.trim() : '').filter(Boolean))].sort();
+    
+    if (uniqueAreas.length === 0) {
+        el.innerHTML = '<span class="text-xs text-slate-400 italic">エリアが登録されたメンバーがいません。エリア名を入れると色分けされます。</span>';
+        return;
+    }
+    
+    el.innerHTML = uniqueAreas.map(area => {
+        return `<span class="${getAreaColor(area)} px-2.5 py-1 rounded-full text-xs font-bold shadow-sm">${area}</span>`;
+    }).join('');
+}
+
+function inlineAddMember() {
+    const nameEl = document.getElementById('mem-inline-name');
+    const areaEl = document.getElementById('mem-inline-area');
+    const capEl = document.getElementById('mem-inline-cap');
+    
+    const name = nameEl.value.trim();
+    const area = areaEl.value.trim();
+    const cap = parseInt(capEl.value, 10) || 0;
+    
+    if (!name) {
+        showMessage('名前は必須入力です。', 'error');
+        nameEl.focus();
+        return;
+    }
+    
+    if (appData.members.find(m => m.name === name)) {
+        showMessage('既に同姓同名のメンバーが存在します。', 'error');
+        nameEl.focus();
+        return;
+    }
+    
+    appData.members.push({ name: name, area: area, carCapacity: cap });
+    saveData();
+    renderMembersTab();
+    showMessage(`「${name}」さんを追加しました。`, 'success');
+}
+
+window.editMember = function(i) {
+    const m = appData.members[i];
+    
+    const formHtml = `
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">お名前 (必須)</label>
+                <input id="mf-name" value="${m.name}" class="w-full border p-2 rounded-lg text-sm bg-white font-bold focus:ring-2 focus:ring-teal-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">活動エリア (任意)</label>
+                <input id="mf-area" value="${m.area || ''}" placeholder="例: 東区、戸畑" class="w-full border p-2 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">
+                    車の総定員数 (任意)
+                    <span class="block text-[10px] text-slate-400 font-normal">※本人を含んだ乗車可能最大人数。乗るだけの人は「0」</span>
+                </label>
+                <input id="mf-cap" type="number" min="0" max="20" value="${m.carCapacity || 0}" class="w-full border p-2 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none font-bold">
+            </div>
+        </div>
+    `;
+    
+    openModal('メンバー・車情報の編集', formHtml, () => {
+        const inputName = document.getElementById('mf-name').value.trim();
+        const inputArea = document.getElementById('mf-area').value.trim();
+        const inputCap = parseInt(document.getElementById('mf-cap').value, 10) || 0;
+        
+        if (!inputName) {
+            showMessage('名前が入力されていません。', 'error');
+            return;
+        }
+
+        // 重複チェック (自分自身を除く)
+        const duplicate = appData.members.find((item, index) => item.name === inputName && index !== i);
+        if (duplicate) {
+            showMessage('既に同じ名前のメンバーが登録されています。', 'error');
+            return;
+        }
+
+        appData.members[i] = { 
+            name: inputName, 
+            area: inputArea,
+            carCapacity: inputCap
+        };
+        saveData();
+        closeModal();
+        renderMembersTab();
+        renderMainTab(); // 同時更新
+        showMessage('情報を変更しました', 'success');
+    });
+};
+
+window.deleteMember = function(i) {
+    const member = appData.members[i];
+    openModal(
+        'メンバー削除の確認',
+        `<span class="font-bold text-rose-600">「${member.name}」</span> さんをリストから削除しますか？<br>この操作は取り消せません。`,
+        () => {
+            appData.members.splice(i, 1);
+            saveData();
+            renderMembersTab();
+            renderMainTab();
+            closeModal();
+            showMessage('メンバーを削除しました', 'success');
+        }
+    );
+};
+
+// メンバーの一括全削除機能
+document.getElementById('clear-all-members-btn').addEventListener('click', () => {
+    if (appData.members.length === 0) return;
+    openModal(
+        '【警告】メンバー全削除',
+        '登録されているメンバーデータをすべて消去しますか？<br>一度削除すると元に戻せません。あらかじめ「CSVエクスポート」で保存しておくことをお勧めします。',
+        () => {
+            appData.members = [];
+            saveData();
+            renderMembersTab();
+            renderMainTab();
+            closeModal();
+            showMessage('すべての登録メンバーを削除しました。', 'success');
+        }
+    );
+});
+
+
+// ===== 📥/📤 CSVバックアップ処理 =====
+
+function escapeCSV(str) {
+    if (str === null || str === undefined) return '';
+    const s = String(str);
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+}
+
+function exportCSV() {
+    if (appData.members.length === 0) {
+        showMessage('書き出すメンバーデータがありません。', 'error');
+        return;
+    }
+    
+    let csvContent = "名前,エリア,車の定員\r\n";
+    appData.members.forEach(m => {
+        csvContent += `${escapeCSV(m.name)},${escapeCSV(m.area)},${m.carCapacity}\r\n`;
+    });
+    
+    // Excelで開いた際の文字化けを防ぐためBOM付きUTF-8
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    a.download = `haicha_members_${dateStr}.csv`;
+    
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showMessage('CSVファイルをダウンロードしました。Excel等で確認・編集可能です。', 'success');
+}
+
+function parseCSVRow(row) {
+    const result = [];
+    let curVal = '';
+    let inQuotes = false;
+    for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+        if (inQuotes) {
+            if (char === '"') {
+                if (i < row.length - 1 && row[i+1] === '"') {
+                    curVal += '"'; i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                curVal += char;
+            }
+        } else {
+            if (char === '"') {
+                inQuotes = true;
+            } else if (char === ',') {
+                result.push(curVal);
+                curVal = '';
+            } else {
+                curVal += char;
+            }
+        }
+    }
+    result.push(curVal);
+    return result;
+}
+
+function importCSV(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const inputElement = event.target;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const buffer = e.target.result;
+            // UTF-8デコード
+            let text = new TextDecoder('utf-8').decode(buffer);
+            
+            // Excelで保存したShift_JISなど文字化け自動救済検知
+            if (text.includes('\uFFFD')) {
+                text = new TextDecoder('shift_jis').decode(buffer);
+            }
+
+            const lines = text.split(/\r\n|\n|\r/);
+            const importedMembers = [];
+            
+            // ヘッダー行判定(1行目に「名前」や「エリア」や「定員」が含まれる場合はスキップ)
+            let startIndex = 0;
+            if (lines.length > 0 && (lines[0].includes('名前') || lines[0].includes('エリア') || lines[0].includes('定員') || lines[0].includes('name'))) {
+                startIndex = 1;
+            }
+            
+            for (let i = startIndex; i < lines.length; i++) { 
+                const line = lines[i];
+                if (!line.trim()) continue; 
+                
+                const cols = parseCSVRow(line);
+                if (cols.length >= 1) {
+                    const name = cols[0].trim();
+                    // ヘッダー誤読防止
+                    if (!name || name === '名前' || name === 'name') continue;
+                    
+                    const area = cols[1] ? cols[1].trim() : '';
+                    const cap = parseInt(cols[2], 10) || 0;
+                    
+                    importedMembers.push({ name: name, area: area, carCapacity: cap });
+                }
+            }
+            
+            if (importedMembers.length === 0) {
+                showMessage('有効なメンバー情報を読み込めませんでした。CSVの書式を確認してください。', 'error');
+            } else {
+                openModal(
+                    'メンバーデータの上書きインポート',
+                    `現在登録されている ${appData.members.length} 件のデータを消去し、CSVから新たに <span class="font-bold text-teal-600">${importedMembers.length} 件</span> を上書き登録しますか？`,
+                    () => {
+                        appData.members = importedMembers;
+                        saveData();
+                        renderMembersTab();
+                        renderMainTab();
+                        closeModal();
+                        showMessage('CSVからメンバー情報をインポートしました！', 'success');
+                    }
+                );
+            }
+        } catch (err) {
+            console.error(err);
+            showMessage('ファイルの解析中に致命的なエラーが発生しました。', 'error');
+        } finally {
+            inputElement.value = ''; // ファイル選択バッファ初期化
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('csv-export-btn').addEventListener('click', exportCSV);
+document.getElementById('csv-import-input').addEventListener('change', importCSV);
+
+// ===== 初期起動処理 =====
+window.onload = function() {
+    rebuildAreaColors();
+    renderMainTab();
+};
+</script>
+</body>
+</html>
