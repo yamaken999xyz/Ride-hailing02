@@ -189,7 +189,7 @@
             <h2 class="font-bold text-lg mb-4 pb-2 border-b border-slate-100 flex items-center gap-2 text-slate-800">
                 <span class="w-7 h-7 rounded-full border-2 border-teal-600 text-teal-600 flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
                 本日の車を選ぶ
-                <span class="ml-auto text-xs font-normal text-slate-500 hidden sm:inline">※出席メンバーの中で、車を出せるドライバーが表示されます</span>
+                <span class="ml-auto text-xs font-normal text-slate-500 hidden sm:inline">※出席メンバーの車、または「車のみ」で登録された独立車両が表示されます</span>
             </h2>
             <div id="driver-select-list" class="space-y-2">
                 <!-- JSで展開 -->
@@ -271,8 +271,8 @@
         <div class="card">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <h2 class="font-bold text-lg text-slate-800">👥 登録メンバー一覧</h2>
-                    <p class="text-xs text-slate-500 mt-1">各個人の名前、お住まい等の活動エリア、車を出せる場合の乗車定員を管理します。</p>
+                    <h2 class="font-bold text-lg text-slate-800">👥 登録メンバー・車両一覧</h2>
+                    <p class="text-xs text-slate-500 mt-1">名前、活動エリア、乗車定員を管理します。レンタカーや部活バスなど「車のみ（人間ではない）」の登録も可能です。</p>
                 </div>
                 
                 <!-- インポート/エクスポートアクション -->
@@ -303,9 +303,10 @@
                 <table class="w-full text-sm text-left border-collapse">
                     <thead>
                         <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold">
-                            <th class="py-3 px-4">名前</th>
+                            <th class="py-3 px-4">名前 / 車名</th>
                             <th class="py-3 px-4">エリア (任意)</th>
                             <th class="py-3 px-4 text-center">車の定員 (任意)</th>
+                            <th class="py-3 px-4 text-center">区分</th>
                             <th class="py-3 px-4 text-center w-32">操作</th>
                         </tr>
                     </thead>
@@ -420,69 +421,67 @@
 
 <script>
 // ===== データ定義（サンプル入り） =====
-const DATA_VERSION = 'v10';
+const DATA_VERSION = 'v11';
 const DEFAULT_MEMBERS = [
-    { name: '山田 太郎', area: '小倉', carCapacity: 5 },
-    { name: '佐藤 花子', area: '八幡', carCapacity: 4 },
-    { name: '鈴木 一郎', area: '門司', carCapacity: 0 },
-    { name: '田中 亮太', area: '小倉', carCapacity: 0 },
-    { name: '高橋 健二', area: '戸畑', carCapacity: 7 },
-    { name: '渡辺 恵美', area: '門司', carCapacity: 0 },
-    { name: '伊藤 翼', area: '小倉', carCapacity: 0 },
-    { name: '小林 咲', area: '戸畑', carCapacity: 0 },
-    { name: '加藤 大介', area: '八幡', carCapacity: 4 },
-    { name: '松本 楓', area: '若松', carCapacity: 0 }
+    { name: '山田 太郎', area: '小倉', carCapacity: 5, isCarOnly: false },
+    { name: '佐藤 花子', area: '八幡', carCapacity: 4, isCarOnly: false },
+    { name: '鈴木 一郎', area: '門司', carCapacity: 0, isCarOnly: false },
+    { name: '田中 亮太', area: '小倉', carCapacity: 0, isCarOnly: false },
+    { name: '部活マイクロバス', area: '小倉', carCapacity: 12, isCarOnly: true },
+    { name: '高橋 健二', area: '戸畑', carCapacity: 7, isCarOnly: false },
+    { name: '渡辺 恵美', area: '門司', carCapacity: 0, isCarOnly: false },
+    { name: 'レンタカーワゴン車', area: '八幡', carCapacity: 8, isCarOnly: true },
+    { name: '伊藤 翼', area: '小倉', carCapacity: 0, isCarOnly: false },
+    { name: '小林 咲', area: '戸畑', carCapacity: 0, isCarOnly: false },
+    { name: '加藤 大介', area: '八幡', carCapacity: 4, isCarOnly: false },
+    { name: '松本 楓', area: '若松', carCapacity: 0, isCarOnly: false }
 ];
 
 function loadData() {
     try {
         const storedVersion = localStorage.getItem('haicha_version');
         if (storedVersion !== DATA_VERSION) {
-            // 旧バージョンからの移行、または新規の初期サンプル投入
             let migratedMembers = [];
             
-            const oldDataV9 = localStorage.getItem('haicha_data_v9');
-            if (oldDataV9) {
-                const parsed = JSON.parse(oldDataV9);
+            // v10からの移行
+            const oldDataV10 = localStorage.getItem('haicha_data_v10');
+            if (oldDataV10) {
+                const parsed = JSON.parse(oldDataV10);
                 if (parsed && Array.isArray(parsed.members)) {
-                    migratedMembers = parsed.members;
+                    migratedMembers = parsed.members.map(m => ({
+                        ...m,
+                        isCarOnly: m.isCarOnly || false
+                    }));
                 }
             } else {
-                // v8以前
-                const oldMembers = JSON.parse(localStorage.getItem('haicha_members')) || [];
-                const oldDrivers = JSON.parse(localStorage.getItem('haicha_drivers')) || [];
-                
-                migratedMembers = oldMembers.map(m => {
-                    const driver = oldDrivers.find(d => d.name === m.name + "の車" || d.name === m.name);
-                    return {
-                        name: m.name,
-                        area: m.area || '',
-                        carCapacity: driver ? driver.defaultCapacity : 0
-                    };
-                });
-                
-                oldDrivers.forEach(d => {
-                    const isLinked = oldMembers.some(m => d.name === m.name + "の車" || d.name === m.name);
-                    if (!isLinked) {
-                        migratedMembers.push({ name: d.name, area: '', carCapacity: d.defaultCapacity });
+                // v9以前からの移行
+                const oldDataV9 = localStorage.getItem('haicha_data_v9');
+                if (oldDataV9) {
+                    const parsed = JSON.parse(oldDataV9);
+                    if (parsed && Array.isArray(parsed.members)) {
+                        migratedMembers = parsed.members.map(m => ({
+                            name: m.name,
+                            area: m.area || '',
+                            carCapacity: m.carCapacity || 0,
+                            isCarOnly: false
+                        }));
                     }
-                });
+                }
             }
 
-            // 何もデータがない場合は初期サンプルをセット
             if (migratedMembers.length === 0) {
                 migratedMembers = DEFAULT_MEMBERS;
             }
 
             const data = { members: migratedMembers };
             localStorage.setItem('haicha_version', DATA_VERSION);
-            localStorage.setItem('haicha_data_v10', JSON.stringify(data));
+            localStorage.setItem('haicha_data_v11', JSON.stringify(data));
             return data;
         }
         
-        const dataV10 = localStorage.getItem('haicha_data_v10');
-        if (dataV10) {
-            return JSON.parse(dataV10);
+        const dataV11 = localStorage.getItem('haicha_data_v11');
+        if (dataV11) {
+            return JSON.parse(dataV11);
         }
         return { members: DEFAULT_MEMBERS };
     } catch(e) {
@@ -494,7 +493,7 @@ function loadData() {
 function saveData() {
     try {
         localStorage.setItem('haicha_version', DATA_VERSION);
-        localStorage.setItem('haicha_data_v10', JSON.stringify(appData));
+        localStorage.setItem('haicha_data_v11', JSON.stringify(appData));
     } catch(e) {
         console.error('Data save error:', e);
     }
@@ -576,14 +575,16 @@ function showMessage(msg, type) {
 function renderMainTab() {
     rebuildAreaColors();
     renderAttendance();
-    // ボードは「配車ボードを開く」が押されるまで隠しておく
 }
 
 function renderAttendance() {
     const el = document.getElementById('attendance-list');
     const emptyEl = document.getElementById('attendance-list-empty');
     
-    if (appData.members.length === 0) {
+    // 「車のみ」登録を除外した、本来の人間メンバーを抽出
+    const humanMembers = appData.members.filter(m => !m.isCarOnly);
+    
+    if (humanMembers.length === 0) {
         el.innerHTML = '';
         emptyEl.classList.remove('hidden');
         document.getElementById('participant-count').textContent = '0';
@@ -592,7 +593,7 @@ function renderAttendance() {
     }
     
     emptyEl.classList.add('hidden');
-    el.innerHTML = appData.members.map((m, idx) => {
+    el.innerHTML = humanMembers.map((m, idx) => {
         const areaBadge = m.area ? `<span class="${getAreaColor(m.area)} px-1.5 py-0.2 text-[10px] rounded font-bold ml-1">${m.area}</span>` : '';
         return `
             <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer select-none transition">
@@ -630,17 +631,22 @@ document.getElementById('deselect-all-btn').addEventListener('click', () => {
 function renderDriverSelect() {
     const participants = Array.from(document.querySelectorAll('input[name="attendance"]:checked')).map(cb => cb.value);
     
-    // 出席メンバーの中に車所有ドライバーがいるかフィルタ
-    const availableDrivers = appData.members.filter(m => participants.includes(m.name) && m.carCapacity > 0);
+    // 1. 出席メンバーの中にいる車持ちドライバー
+    const availableDrivers = appData.members.filter(m => !m.isCarOnly && participants.includes(m.name) && m.carCapacity > 0);
+    // 2. 「車のみ（独立車両）」の登録
+    const independentCars = appData.members.filter(m => m.isCarOnly && m.carCapacity > 0);
+    
+    // 合体させた車両リスト
+    const allAvailableCars = [...availableDrivers, ...independentCars];
     const el = document.getElementById('driver-select-list');
     
-    if (availableDrivers.length === 0) {
+    if (allAvailableCars.length === 0) {
         el.innerHTML = `
             <div class="p-4 bg-amber-50 rounded-xl border border-amber-100 text-amber-800 text-sm flex items-start gap-2">
                 <span>⚠️</span>
                 <div>
-                    <strong>本日参加可能な車（ドライバー）が見つかりません。</strong><br>
-                    <span class="text-xs text-amber-700">「メンバー・車登録」タブで車の定員を1以上に設定しているメンバーが出席している必要があります。</span>
+                    <strong>本日利用可能な車が見つかりません。</strong><br>
+                    <span class="text-xs text-amber-700">「メンバー・車登録」タブで、車の定員を設定したメンバーを出席させるか、独立した車両（車のみ）を登録してください。</span>
                 </div>
             </div>
         `;
@@ -648,8 +654,9 @@ function renderDriverSelect() {
         return;
     }
 
-    el.innerHTML = availableDrivers.map(m => {
-        const carName = m.name.endsWith('車') || m.name.endsWith('バス') || m.name.endsWith('ワゴン') || m.name.endsWith('カー') ? m.name : m.name + "の車";
+    el.innerHTML = allAvailableCars.map(m => {
+        const isCarOnlyBadge = m.isCarOnly ? `<span class="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-indigo-200">車のみ</span>` : '';
+        const carName = m.isCarOnly ? m.name : (m.name.endsWith('車') || m.name.endsWith('バス') || m.name.endsWith('ワゴン') || m.name.endsWith('カー') ? m.name : m.name + "の車");
         const areaBadge = m.area ? `<span class="${getAreaColor(m.area)} px-2 py-0.5 text-xs rounded-full font-bold">${m.area}</span>` : '';
         
         return `
@@ -658,12 +665,13 @@ function renderDriverSelect() {
                     <input type="checkbox" id="drv-sel-${m.name}" name="driver" value="${m.name}" class="h-5 w-5 rounded text-teal-600 focus:ring-teal-500 cursor-pointer">
                     <label for="drv-sel-${m.name}" class="font-bold text-slate-800 cursor-pointer flex items-center gap-1.5 text-sm sm:text-base">
                         🚙 ${carName}
+                        ${isCarOnlyBadge}
                         ${areaBadge}
                     </label>
                 </div>
                 <div class="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                     <span class="font-medium">定員:</span>
-                    <input type="number" name="cap" data-driver="${m.name}" value="${m.carCapacity}" min="1" max="20" disabled
+                    <input type="number" name="cap" data-driver="${m.name}" value="${m.carCapacity}" min="1" max="25" disabled
                            class="w-12 p-1 border rounded text-center font-bold text-slate-800 bg-slate-200 focus:ring-1 focus:ring-teal-500">
                     <span>名</span>
                 </div>
@@ -671,7 +679,7 @@ function renderDriverSelect() {
         `;
     }).join('');
 
-    // チェック連動：車を稼働チェックしたら定員変更できるようになる
+    // チェック連動
     el.querySelectorAll('input[name="driver"]').forEach(cb => {
         cb.addEventListener('change', e => {
             const capInput = el.querySelector(`input[name="cap"][data-driver="${e.target.value}"]`);
@@ -693,7 +701,6 @@ function renderDriverSelect() {
         input.addEventListener('input', updateSelectedCapacityTotal);
     });
 
-    // 初期起動時におおよそ1台目はチェック入れておくなどの便宜は図らず、手動を重視
     updateSelectedCapacityTotal();
 }
 
@@ -724,14 +731,22 @@ document.getElementById('startBoardBtn').addEventListener('click', () => {
     const selectedHaichas = [];
     document.querySelectorAll('input[name="driver"]:checked').forEach(cb => {
         const memberName = cb.value;
-        const carName = memberName.endsWith('車') || memberName.endsWith('バス') || memberName.endsWith('ワゴン') || memberName.endsWith('カー') ? memberName : memberName + "の車";
+        const matchedObj = appData.members.find(m => m.name === memberName);
+        const isCarOnly = matchedObj ? matchedObj.isCarOnly : false;
+        
+        let carName = memberName;
+        if (!isCarOnly) {
+            carName = memberName.endsWith('車') || memberName.endsWith('バス') || memberName.endsWith('ワゴン') || memberName.endsWith('カー') ? memberName : memberName + "の車";
+        }
+        
         const capInput = document.querySelector(`input[name="cap"][data-driver="${memberName}"]`);
         const cap = parseInt(capInput.value, 10) || 1;
         
         selectedHaichas.push({ 
             driverName: memberName,
             carName: carName, 
-            capacity: cap 
+            capacity: cap,
+            isCarOnly: isCarOnly
         });
     });
     
@@ -763,8 +778,8 @@ function buildBoard(participants, haichas) {
     
     haichas.forEach(car => {
         haichaAssignments[car.carName] = [];
-        // 運転手は自動で自分の車に乗せる
-        if (participants.includes(car.driverName)) {
+        // 「車のみ」でなく、運転手自身が出席している場合のみ自動配置
+        if (!car.isCarOnly && participants.includes(car.driverName)) {
             haichaAssignments[car.carName].push(car.driverName);
             assignedNames.add(car.driverName);
         }
@@ -780,11 +795,14 @@ function buildBoard(participants, haichas) {
             return makeChipHtml(memberMap[name] || { name: name, area: '' });
         }).join('');
         
+        const isCarOnlyBadge = car.isCarOnly ? `<span class="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1.5">車両のみ</span>` : '';
+        
         return `
             <div class="car-container card !p-0 overflow-hidden border-2 border-slate-200 transition-all bg-white" data-carname="${car.carName}">
                 <div class="car-header bg-slate-50 px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                     <div>
                         <span class="font-extrabold text-slate-800 text-sm">🚙 ${car.carName}</span>
+                        ${isCarOnlyBadge}
                     </div>
                     <div class="text-xs text-slate-500 font-semibold bg-white border border-slate-100 px-2 py-0.5 rounded-md shadow-sm">
                         <span class="passenger-count font-extrabold text-teal-600 text-sm">0</span>
@@ -811,8 +829,9 @@ function buildBoard(participants, haichas) {
     
     document.getElementById('board-summary').textContent = `（車 ${haichas.length}台 / 定員 ${haichas.reduce((acc, c) => acc + c.capacity, 0)}名 / 参加者 ${participants.length}名）`;
 
-    // 欠席者エリア
-    const absentees = appData.members.filter(m => !participants.includes(m.name));
+    // 欠席者エリア (人間メンバーかつ不参加)
+    const humanMembers = appData.members.filter(m => !m.isCarOnly);
+    const absentees = humanMembers.filter(m => !participants.includes(m.name));
     const absentSection = document.getElementById('absent-section');
     if (absentees.length > 0) {
         document.getElementById('absent-names').textContent = absentees.map(a => a.name).join('、');
@@ -828,7 +847,6 @@ function buildBoard(participants, haichas) {
             animation: 180,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
-            // ドラッグ開始時に他を受け入れ可能に見せるビジュアルエフェクト用
             onStart: function() {
                 document.querySelectorAll('.car-board').forEach(b => {
                     b.classList.add('drag-over');
@@ -847,7 +865,6 @@ function buildBoard(participants, haichas) {
     });
     
     document.getElementById('board-section').classList.remove('hidden');
-    // ドラッグ＆ドロップしやすい位置へスクロール
     document.getElementById('board-section').scrollIntoView({ behavior: 'smooth' });
     updateBoard();
 }
@@ -855,7 +872,7 @@ function buildBoard(participants, haichas) {
 function makeChipHtml(member) {
     const colorClass = getAreaColor(member.area);
     const areaLabel = member.area ? `<span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-white/70 shadow-sm text-slate-700 ml-1 uppercase border border-slate-200/50">${member.area}</span>` : '';
-    const hasCarMark = member.carCapacity > 0 ? '🔑' : '';
+    const hasCarMark = member.carCapacity > 0 && !member.isCarOnly ? '🔑' : '';
     
     return `
         <div class="passenger-chip ${colorClass} px-3 py-2 rounded-xl text-sm font-bold shadow-sm flex items-center gap-1" data-name="${member.name}">
@@ -866,7 +883,7 @@ function makeChipHtml(member) {
     `;
 }
 
-// ドラッグ移動した後のボードの状態（バーの色や人数カウンタ、未割り当て警告など）をリフレッシュ
+// ドラッグ移動した後のボードの状態をリフレッシュ
 function updateBoard() {
     let waitingCount = 0;
     const waitingArea = document.getElementById('waiting-area');
@@ -887,21 +904,17 @@ function updateBoard() {
         fill.style.width = pct + '%';
         
         if (count > cap) {
-            // 定員オーバー
             fill.style.backgroundColor = '#ef4444'; // Red
             container.classList.add('over-capacity');
         } else if (count === cap) {
-            // ピッタリ満車
             fill.style.backgroundColor = '#f59e0b'; // Orange
             container.classList.remove('over-capacity');
         } else {
-            // 余裕あり
             fill.style.backgroundColor = '#10b981'; // Green
             container.classList.remove('over-capacity');
         }
     });
     
-    // 待機中エリアの警告表示
     document.getElementById('waiting-area-wrapper').classList.toggle('has-passengers', waitingCount > 0);
 }
 
@@ -923,22 +936,17 @@ function executeAutoAssignment() {
     const memberMap = {};
     appData.members.forEach(m => { memberMap[m.name] = m; });
 
-    // 1. 各稼働車両ボードの取得
     const carBoards = Array.from(document.querySelectorAll('.car-board'));
-    
-    // 2. 待機中チップの取得
     const waitingArea = document.getElementById('waiting-area');
     const waitingChips = Array.from(waitingArea.querySelectorAll('.passenger-chip'));
     
     if (waitingChips.length === 0) return;
 
-    // 現在の各車の状態（空き容量、所属エリア）を割り出し
     const carStates = carBoards.map(board => {
         const capacity = parseInt(board.dataset.capacity, 10);
         const currentCount = board.children.length;
         const carName = board.dataset.carname;
         
-        // ドライバーの情報を元に車の基準エリアを取得
         const driverName = currentHaichas.find(h => h.carName === carName)?.driverName;
         const driverArea = driverName ? memberMap[driverName]?.area : '';
 
@@ -951,8 +959,6 @@ function executeAutoAssignment() {
         };
     });
 
-    // 3. 待機者を順次自動配置していく
-    // (A) まずは同エリア（エリア完全一致）かつ車に空きがあるものを優先して流し込む
     let remainingChips = [];
     
     waitingChips.forEach(chip => {
@@ -963,7 +969,6 @@ function executeAutoAssignment() {
         let assigned = false;
         
         if (pArea) {
-            // 同じエリアで空きがある車を探す
             const matchingCar = carStates.find(c => c.area === pArea && c.freeSpace > 0);
             if (matchingCar) {
                 matchingCar.el.appendChild(chip);
@@ -977,7 +982,6 @@ function executeAutoAssignment() {
         }
     });
 
-    // (B) 次に、余った人をエリア問わず、単に空きがある車へ流し込む
     remainingChips.forEach(chip => {
         const matchingCar = carStates.find(c => c.freeSpace > 0);
         if (matchingCar) {
@@ -990,7 +994,6 @@ function executeAutoAssignment() {
     showMessage('自動配置を完了しました。手動で最終調整を行ってください。', 'success');
 }
 
-// 完全に初期（ドライバーのみが各自の車に乗った状態）に戻す
 document.getElementById('resetBoardBtn').addEventListener('click', () => {
     if (!currentParticipants.length) return;
     openModal('配置を初期化しますか？', '現在の配車調整をリセットし、全員を待機エリアに戻します。（ドライバーは各自の車に初期配置されます）', () => {
@@ -999,11 +1002,10 @@ document.getElementById('resetBoardBtn').addEventListener('click', () => {
     });
 });
 
-// ===== 結果をテキストコピー =====
+// ===== 結果をテキストコピー (調整日: 行を削除) =====
 function copyResults() {
     const waitingArea = document.getElementById('waiting-area');
     if (waitingArea && waitingArea.children.length > 0) {
-        // 全員配車が済んでいなくても、未割当があることを明示してコピーは可能にする（強制ブロックではなく警告モーダルのみ）
         openModal(
             '注意：未配車のメンバーが残っています', 
             `まだ待機エリアに ${waitingArea.children.length} 名のメンバーが残っています。このまま配車結果テキストをコピーしますか？`, 
@@ -1022,7 +1024,6 @@ function executeCopyProcess() {
     const participantCount = document.querySelectorAll('input[name="attendance"]:checked').length;
     
     let text = '【配車結果のご案内】\n';
-    text += `調整日: ${new Date().toLocaleDateString('ja-JP')}\n`;
     text += `稼働台数: ${carBoards.length}台 / 参加者数: ${participantCount}名\n`;
     text += '---------------------------------\n\n';
 
@@ -1037,8 +1038,15 @@ function executeCopyProcess() {
         } else {
             chips.forEach((chip, i) => {
                 const pName = chip.dataset.name;
-                // 1人目のメンバーを通常ドライバーとする
-                const driverSuffix = i === 0 ? ' [運転手]' : '';
+                const matchedObj = appData.members.find(m => m.name === pName);
+                
+                // 「車のみ」の独立した車両の場合、乗っている全員がフラットに表示される。
+                // 人間ドライバーが所有する車の場合のみ、最初の人を「運転手」と見なす。
+                const carContainer = chip.closest('.car-container');
+                const matchedCarObj = currentHaichas.find(h => h.carName === carContainer.dataset.carname);
+                const isCarOnlyVehicle = matchedCarObj ? matchedCarObj.isCarOnly : false;
+                
+                const driverSuffix = (i === 0 && !isCarOnlyVehicle) ? ' [運転手]' : '';
                 text += `  • ${pName}${driverSuffix}\n`;
             });
         }
@@ -1062,7 +1070,6 @@ function executeCopyProcess() {
     text += '---------------------------------\n';
     text += '※忘れ物のないように気をつけてお越しください！';
 
-    // クリップボードコピー処理の互換性対策
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -1088,7 +1095,7 @@ function executeCopyProcess() {
 document.getElementById('copyBtn').onclick = copyResults;
 
 
-// ===== 👥 メンバー・車 管理タブのロジック =====
+// ===== 👥 メンバー・車 管理タブのロジック (区分表示・車のみ対応) =====
 function renderMembersTab() {
     rebuildAreaColors();
     renderAreaLegend();
@@ -1097,8 +1104,8 @@ function renderMembersTab() {
     if (appData.members.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="4" class="py-8 text-center text-slate-400 text-sm">
-                    登録メンバーはいません。<br>下の「＋ 追加」欄からメンバーを新規作成してください。
+                <td colspan="5" class="py-8 text-center text-slate-400 text-sm">
+                    登録メンバー・車両はありません。<br>下の「＋ 追加」欄から新規作成してください。
                 </td>
             </tr>
         `;
@@ -1111,12 +1118,18 @@ function renderMembersTab() {
             const capMarkup = m.carCapacity > 0 
                 ? `<span class="font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-100">${m.carCapacity} 人</span>` 
                 : `<span class="text-slate-400 text-xs">乗車専門 (0)</span>`;
+            
+            // 区分表示用のバッジ
+            const typeMarkup = m.isCarOnly 
+                ? `<span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-1 rounded text-xs border border-indigo-100">🚙 車のみ</span>`
+                : `<span class="bg-slate-50 text-slate-600 font-medium px-2 py-1 rounded text-xs border border-slate-100">👥 メンバー</span>`;
 
             return `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="py-3 px-4 font-bold text-slate-700">${m.name}</td>
                     <td class="py-3 px-4">${areaMarkup}</td>
                     <td class="py-3 px-4 text-center">${capMarkup}</td>
+                    <td class="py-3 px-4 text-center">${typeMarkup}</td>
                     <td class="py-3 px-4 text-center">
                         <div class="inline-flex gap-1">
                             <button class="bg-teal-50 hover:bg-teal-100 text-teal-700 font-semibold px-2.5 py-1 rounded text-xs transition border border-teal-100" onclick="editMember(${i})">編集</button>
@@ -1128,12 +1141,12 @@ function renderMembersTab() {
         }).join('');
     }
     
-    // インラインフッター入力フォーム
+    // インラインフッター入力フォーム (車のみチェックボックスを追加)
     const tfoot = document.getElementById('members-tfoot');
     tfoot.innerHTML = `
         <tr class="bg-slate-100/70 border-t-2 border-slate-200">
             <td class="p-2.5">
-                <input id="mem-inline-name" type="text" placeholder="＋ 氏名・ニックネーム" 
+                <input id="mem-inline-name" type="text" placeholder="＋ 氏名 または 車名" 
                        class="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-bold">
             </td>
             <td class="p-2.5">
@@ -1142,10 +1155,16 @@ function renderMembersTab() {
             </td>
             <td class="p-2.5 text-center">
                 <div class="flex items-center justify-center gap-1">
-                    <input id="mem-inline-cap" type="number" placeholder="0" min="0" max="20"
+                    <input id="mem-inline-cap" type="number" placeholder="0" min="0" max="25"
                            class="w-16 p-2 border border-slate-300 rounded-lg text-sm bg-white text-center font-bold focus:outline-none focus:ring-2 focus:ring-teal-500">
                     <span class="text-xs text-slate-600 font-bold">人</span>
                 </div>
+            </td>
+            <td class="p-2.5 text-center">
+                <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                    <input id="mem-inline-caronly" type="checkbox" class="h-4 w-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500">
+                    <span class="text-xs text-slate-700 font-bold leading-none">車のみ</span>
+                </label>
             </td>
             <td class="p-2.5 text-center">
                 <button id="mem-inline-add-btn" class="w-full bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-3 rounded-lg shadow-sm transition">
@@ -1176,27 +1195,35 @@ function inlineAddMember() {
     const nameEl = document.getElementById('mem-inline-name');
     const areaEl = document.getElementById('mem-inline-area');
     const capEl = document.getElementById('mem-inline-cap');
+    const carOnlyEl = document.getElementById('mem-inline-caronly');
     
     const name = nameEl.value.trim();
     const area = areaEl.value.trim();
     const cap = parseInt(capEl.value, 10) || 0;
+    const isCarOnly = carOnlyEl ? carOnlyEl.checked : false;
     
     if (!name) {
-        showMessage('名前は必須入力です。', 'error');
+        showMessage('名前/車両名は必須入力です。', 'error');
         nameEl.focus();
+        return;
+    }
+
+    if (isCarOnly && cap <= 0) {
+        showMessage('「車のみ」として登録する場合、定員（1人以上）を設定してください。', 'error');
+        capEl.focus();
         return;
     }
     
     if (appData.members.find(m => m.name === name)) {
-        showMessage('既に同姓同名のメンバーが存在します。', 'error');
+        showMessage('既に同じ名前の登録が存在します。', 'error');
         nameEl.focus();
         return;
     }
     
-    appData.members.push({ name: name, area: area, carCapacity: cap });
+    appData.members.push({ name: name, area: area, carCapacity: cap, isCarOnly: isCarOnly });
     saveData();
     renderMembersTab();
-    showMessage(`「${name}」さんを追加しました。`, 'success');
+    showMessage(`「${name}」を追加しました。`, 'success');
 }
 
 window.editMember = function(i) {
@@ -1205,7 +1232,7 @@ window.editMember = function(i) {
     const formHtml = `
         <div class="space-y-3">
             <div>
-                <label class="block text-xs font-bold text-slate-500 mb-1">お名前 (必須)</label>
+                <label class="block text-xs font-bold text-slate-500 mb-1">お名前 / 車名 (必須)</label>
                 <input id="mf-name" value="${m.name}" class="w-full border p-2 rounded-lg text-sm bg-white font-bold focus:ring-2 focus:ring-teal-500 focus:outline-none">
             </div>
             <div>
@@ -1215,34 +1242,47 @@ window.editMember = function(i) {
             <div>
                 <label class="block text-xs font-bold text-slate-500 mb-1">
                     車の総定員数 (任意)
-                    <span class="block text-[10px] text-slate-400 font-normal">※本人を含んだ乗車可能最大人数。乗るだけの人は「0」</span>
+                    <span class="block text-[10px] text-slate-400 font-normal">※車のみの場合は必須。乗るだけの人は「0」</span>
                 </label>
-                <input id="mf-cap" type="number" min="0" max="20" value="${m.carCapacity || 0}" class="w-full border p-2 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none font-bold">
+                <input id="mf-cap" type="number" min="0" max="25" value="${m.carCapacity || 0}" class="w-full border p-2 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none font-bold">
+            </div>
+            <div class="pt-1">
+                <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <input id="mf-caronly" type="checkbox" ${m.isCarOnly ? 'checked' : ''} class="h-4 w-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500">
+                    <span class="text-xs font-bold text-slate-700">車のみ（人間ではない・メンバー出欠に出さない）</span>
+                </label>
             </div>
         </div>
     `;
     
-    openModal('メンバー・車情報の編集', formHtml, () => {
+    openModal('登録情報の編集', formHtml, () => {
         const inputName = document.getElementById('mf-name').value.trim();
         const inputArea = document.getElementById('mf-area').value.trim();
         const inputCap = parseInt(document.getElementById('mf-cap').value, 10) || 0;
+        const inputCarOnly = document.getElementById('mf-caronly').checked;
         
         if (!inputName) {
-            showMessage('名前が入力されていません。', 'error');
+            showMessage('名前/車両名が入力されていません。', 'error');
+            return;
+        }
+
+        if (inputCarOnly && inputCap <= 0) {
+            showMessage('車のみとして登録する場合、定員（1名以上）を登録してください。', 'error');
             return;
         }
 
         // 重複チェック (自分自身を除く)
         const duplicate = appData.members.find((item, index) => item.name === inputName && index !== i);
         if (duplicate) {
-            showMessage('既に同じ名前のメンバーが登録されています。', 'error');
+            showMessage('既に同じ名前が登録されています。', 'error');
             return;
         }
 
         appData.members[i] = { 
             name: inputName, 
             area: inputArea,
-            carCapacity: inputCap
+            carCapacity: inputCap,
+            isCarOnly: inputCarOnly
         };
         saveData();
         closeModal();
@@ -1255,15 +1295,15 @@ window.editMember = function(i) {
 window.deleteMember = function(i) {
     const member = appData.members[i];
     openModal(
-        'メンバー削除の確認',
-        `<span class="font-bold text-rose-600">「${member.name}」</span> さんをリストから削除しますか？<br>この操作は取り消せません。`,
+        '削除の確認',
+        `<span class="font-bold text-rose-600">「${member.name}」</span> をリストから削除しますか？<br>この操作は取り消せません。`,
         () => {
             appData.members.splice(i, 1);
             saveData();
             renderMembersTab();
             renderMainTab();
             closeModal();
-            showMessage('メンバーを削除しました', 'success');
+            showMessage('削除しました', 'success');
         }
     );
 };
@@ -1303,12 +1343,11 @@ function exportCSV() {
         return;
     }
     
-    let csvContent = "名前,エリア,車の定員\r\n";
+    let csvContent = "名前,エリア,車の定員,車のみ\r\n";
     appData.members.forEach(m => {
-        csvContent += `${escapeCSV(m.name)},${escapeCSV(m.area)},${m.carCapacity}\r\n`;
+        csvContent += `${escapeCSV(m.name)},${escapeCSV(m.area)},${m.carCapacity},${m.isCarOnly ? 1 : 0}\r\n`;
     });
     
-    // Excelで開いた際の文字化けを防ぐためBOM付きUTF-8
     const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
     const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1323,7 +1362,7 @@ function exportCSV() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    showMessage('CSVファイルをダウンロードしました。Excel等で確認・編集可能です。', 'success');
+    showMessage('CSVファイルをダウンロードしました。', 'success');
 }
 
 function parseCSVRow(row) {
@@ -1366,10 +1405,8 @@ function importCSV(event) {
     reader.onload = function(e) {
         try {
             const buffer = e.target.result;
-            // UTF-8デコード
             let text = new TextDecoder('utf-8').decode(buffer);
             
-            // Excelで保存したShift_JISなど文字化け自動救済検知
             if (text.includes('\uFFFD')) {
                 text = new TextDecoder('shift_jis').decode(buffer);
             }
@@ -1377,7 +1414,6 @@ function importCSV(event) {
             const lines = text.split(/\r\n|\n|\r/);
             const importedMembers = [];
             
-            // ヘッダー行判定(1行目に「名前」や「エリア」や「定員」が含まれる場合はスキップ)
             let startIndex = 0;
             if (lines.length > 0 && (lines[0].includes('名前') || lines[0].includes('エリア') || lines[0].includes('定員') || lines[0].includes('name'))) {
                 startIndex = 1;
@@ -1390,21 +1426,21 @@ function importCSV(event) {
                 const cols = parseCSVRow(line);
                 if (cols.length >= 1) {
                     const name = cols[0].trim();
-                    // ヘッダー誤読防止
                     if (!name || name === '名前' || name === 'name') continue;
                     
                     const area = cols[1] ? cols[1].trim() : '';
                     const cap = parseInt(cols[2], 10) || 0;
+                    const isCarOnly = cols[3] ? (cols[3].trim() === '1' || cols[3].trim().toLowerCase() === 'true') : false;
                     
-                    importedMembers.push({ name: name, area: area, carCapacity: cap });
+                    importedMembers.push({ name: name, area: area, carCapacity: cap, isCarOnly: isCarOnly });
                 }
             }
             
             if (importedMembers.length === 0) {
-                showMessage('有効なメンバー情報を読み込めませんでした。CSVの書式を確認してください。', 'error');
+                showMessage('有効な登録情報を読み込めませんでした。CSVの書式を確認してください。', 'error');
             } else {
                 openModal(
-                    'メンバーデータの上書きインポート',
+                    'データの新規上書きインポート',
                     `現在登録されている ${appData.members.length} 件のデータを消去し、CSVから新たに <span class="font-bold text-teal-600">${importedMembers.length} 件</span> を上書き登録しますか？`,
                     () => {
                         appData.members = importedMembers;
@@ -1412,15 +1448,15 @@ function importCSV(event) {
                         renderMembersTab();
                         renderMainTab();
                         closeModal();
-                        showMessage('CSVからメンバー情報をインポートしました！', 'success');
+                        showMessage('CSVから登録情報をインポートしました！', 'success');
                     }
                 );
             }
         } catch (err) {
             console.error(err);
-            showMessage('ファイルの解析中に致命的なエラーが発生しました。', 'error');
+            showMessage('ファイルの解析中にエラーが発生しました。', 'error');
         } finally {
-            inputElement.value = ''; // ファイル選択バッファ初期化
+            inputElement.value = ''; 
         }
     };
     reader.readAsArrayBuffer(file);
