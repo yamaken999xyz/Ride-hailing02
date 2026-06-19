@@ -356,7 +356,7 @@
 
             <!-- エリアマーカーの説明 -->
             <div class="mb-5">
-                <span class="text-xs font-bold text-slate-400 block mb-2">登録中のエリア区分:</span>
+                <span class="text-xs font-bold text-slate-400 block mb-2">登録中のエリア区分 <span class="text-[10px] text-teal-600 font-semibold">(タップして入力欄へ自動挿入 ＋)</span>:</span>
                 <div id="area-legend" class="flex flex-wrap gap-1.5 p-3.5 bg-slate-50/70 rounded-2xl border border-slate-100">
                     <!-- JSでエリア一覧バッジを展開 -->
                 </div>
@@ -402,7 +402,7 @@
                                 「👥 メンバー・車」タブで名前・エリア・定員を入力して追加します。<br>
                                 ＜車の定員について＞<br>
                                 ・定員数は「同乗するメンバー数」を入力します（運転手・保護者は含まない）。<br>
-                                ・配車できないメンバーは車の定員を「0」のまま登録してください。
+                                • 配車できないメンバーは車の定員を「0」のまま登録してください。
                             </p>
                         </div>
                     </section>
@@ -456,7 +456,7 @@
 
 <!-- モーダル（共通ダイアログ - iOS風シートダイアログ） -->
 <div id="modal-overlay">
-    <div class="modal-card bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm mx-4 border border-slate-100">
+    <div class="modal-card bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm mx-4 border border-slate-100 max-h-[90vh] overflow-y-auto">
         <h3 id="modal-title" class="font-black text-lg text-slate-900 mb-2"></h3>
         <div id="modal-body" class="space-y-3 text-xs sm:text-sm text-slate-500 leading-relaxed font-medium"></div>
         <div class="flex gap-3 mt-6">
@@ -1119,7 +1119,7 @@ function executeCopyProcess() {
     }
     
     text += '---------------------------------\n';
-    
+    text += '※忘れ物のないように気をつけてお越しください！';
 
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -1145,6 +1145,16 @@ function executeCopyProcess() {
 
 document.getElementById('copyBtn').onclick = copyResults;
 
+// ===== エリア選択（タップで自動入力）のクリックハンドラ =====
+window.selectArea = function(area) {
+    const inlineAreaInput = document.getElementById('mem-inline-area');
+    if (inlineAreaInput) {
+        inlineAreaInput.value = area;
+        inlineAreaInput.focus();
+        showMessage(`エリア「${area}」を入力欄にセットしました！`, 'success');
+    }
+};
+
 // ===== 👥 メンバー・車 管理タブのロジック =====
 function renderMembersTab() {
     rebuildAreaColors();
@@ -1165,6 +1175,7 @@ function renderMembersTab() {
                 ? `<span class="${getAreaColor(m.area)} px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-xs">${m.area}</span>` 
                 : `<span class="text-slate-400 text-xs italic font-medium">未設定</span>`;
             
+            const bgBadgeColor = m.carCapacity > 0 ? getAreaColor(m.area) : '';
             const capMarkup = m.carCapacity > 0 
                 ? `<span class="font-bold text-teal-800 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 text-xs sm:text-sm">${m.carCapacity} 人</span>` 
                 : `<span class="text-slate-400 text-xs font-medium">乗車専門 (0)</span>`;
@@ -1235,7 +1246,15 @@ function renderAreaLegend() {
     }
     
     el.innerHTML = uniqueAreas.map(area => {
-        return `<span class="${getAreaColor(area)} px-3 py-1 rounded-full text-[10px] font-bold shadow-xs border">${area}</span>`;
+        return `
+            <button type="button" 
+                    onclick="selectArea('${area}')" 
+                    class="${getAreaColor(area)} px-3.5 py-1.5 rounded-full text-[11px] font-bold shadow-xs border transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
+                    title="タップして新規入力欄に自動セット">
+                <span>${area}</span>
+                <span class="text-[9px] opacity-60">＋</span>
+            </button>
+        `;
     }).join('');
 }
 
@@ -1276,7 +1295,19 @@ function inlineAddMember() {
 
 window.editMember = function(i) {
     const m = appData.members[i];
+    const uniqueAreas = [...new Set(appData.members.map(item => item.area ? item.area.trim() : '').filter(Boolean))].sort();
     
+    // 編集モーダル内にもクイックエリア選択バッジを配置
+    const areaBadgesHtml = uniqueAreas.map(area => {
+        return `
+            <button type="button" 
+                    class="${getAreaColor(area)} px-2.5 py-1 rounded-full text-[10px] font-bold border shadow-xs transition-transform active:scale-95 cursor-pointer"
+                    onclick="document.getElementById('mf-area').value='${area}'">
+                ${area}
+            </button>
+        `;
+    }).join(' ');
+
     const formHtml = `
         <div class="space-y-4 text-left">
             <div>
@@ -1286,6 +1317,12 @@ window.editMember = function(i) {
             <div>
                 <label class="block text-xs font-bold text-slate-400 mb-1">活動エリア (任意)</label>
                 <input id="mf-area" value="${m.area || ''}" placeholder="例: 東区、戸畑" class="w-full border border-slate-200 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                ${uniqueAreas.length > 0 ? `
+                <div class="mt-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/50">
+                    <span class="text-[10px] text-slate-400 font-bold block mb-1.5">登録済みのエリアから選択:</span>
+                    <div class="flex flex-wrap gap-1.5">${areaBadgesHtml}</div>
+                </div>
+                ` : ''}
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-400 mb-1">
